@@ -1,0 +1,152 @@
+---
+title: "linear regression"
+author: "Yujin Zhang"
+date: "11/16/2021"
+output: github_document
+---
+
+## Linear regression start
+
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+
+set.seed(1)
+
+```
+
+## Input Airbnb data
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    borough = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(borough != "Staten Island") %>% 
+  select(price, stars, borough, neighborhood, room_type)
+
+```
+
+## Making plots
+
+
+```{r, echo=FALSE}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price)) +
+  geom_point()
+```
+
+
+## Fit a linear model
+
+```{r}
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+
+summary(fit) # how does it work?
+```
+
+## If you want to present output
+```{r}
+fit %>%
+  broom::tidy() %>% 
+  mutate(term = str_replace(term, "borough", "Borough")) %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+
+```
+
+## Diagnostis
+```{r}
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x = stars, y = resid)) +
+  geom_point()
+
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x = resid)) +
+  geom_density() +
+  xlim(-200, 200)
+```
+
+## If interaction? nesting?
+A different model
+
+```{r}
+fit1 = lm(price ~ stars * borough + room_type * borough, data = nyc_airbnb)
+
+broom::tidy(fit1)
+```
+
+Do nesting
+```{r}
+nyc_airbnb %>% 
+  relocate(borough) %>% 
+  nest(data = price:room_type) %>%  # using ':'
+  mutate(
+    lm_fits = map(.x = data, ~lm(price ~ stars + room_type, data = .x)),
+    lm_results = map(lm_fits, broom::tidy)
+  ) %>% 
+  select(borough, lm_results) %>% 
+  unnest(lm_results) %>% 
+  filter(term == "stars")
+```
+
+Now look at the neighborhoods in Manhattan
+```{r}
+manhattan_lm_result =
+nyc_airbnb %>% 
+  filter(borough == "Manhattan") %>% 
+  select(-borough) %>% 
+  relocate(neighborhood) %>% 
+  nest(
+    data = price:room_type
+  ) %>% 
+  mutate(
+    lm_fits = map(.x = data, ~lm(price ~ stars + room_type, data = .x)),
+    lm_results = map(lm_fits, broom::tidy)  
+  ) %>% 
+  select(-data, -lm_fits) %>% 
+  unnest(lm_results)
+```
+
+```{r}
+manhattan_lm_result %>% 
+  filter(str_detect(term, "room_type")) %>% # similar to group_by
+  ggplot(aes(x = neighborhood, y = estimate)) + 
+  geom_point() + 
+  facet_wrap(~term) + 
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))
+```
+
+## Logistic regression
+```{r}
+nyc_airbnb_ex = 
+  nyc_airbnb %>% 
+  mutate(
+    expensive_apt = as.numeric(price > 500)
+  )
+```
+
+Then fit a logistic regression for the binary outcome
+```{r}
+logistic_fit =
+  glm(
+  expensive_apt ~ stars + borough,
+  data = nyc_airbnb_ex,
+  family = binomial()
+  )
+
+logistic_fit %>% 
+  broom::tidy() %>% 
+  mutate(
+    term = str_replace(term, "borough", "Borough"),
+    estimate = exp(estimate)
+  ) %>% 
+  select(term, OR = estimate, p.value)
+
+
+```
+
