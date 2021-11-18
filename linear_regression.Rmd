@@ -136,7 +136,7 @@ logistic_fit =
   glm(
   expensive_apt ~ stars + borough,
   data = nyc_airbnb_ex,
-  family = binomial()
+  family = binomial() # build regression that outcome is not continuous or not normal
   )
 
 logistic_fit %>% 
@@ -147,6 +147,8 @@ logistic_fit %>%
   ) %>% 
   select(term, OR = estimate, p.value)
 
-
+nyc_airbnb_ex %>% 
+  modelr::add_predictions(logistic_fit) %>% 
+  mutate(pred = boot::inv.logit(pred))
 ```
 
