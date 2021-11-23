@@ -1,0 +1,177 @@
+---
+title: "Bootstrapping"
+author: "Yujin Zhang"
+date: "11/23/2021"
+output: github_document
+---
+
+## Bootstrapping
+
+repeat sampling: the code is about
+
+draw a sample with replacement-- analyze the sample-- return the object of interest
+
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+
+library(modelr)
+
+set.seed(1)
+
+```
+
+## suimulate two dataset
+
+
+```{r}
+n_samp = 250
+
+sim_df_const = 
+  tibble(
+    x = rnorm(n_samp, 1, 1),
+    error = rnorm(n_samp, 0, 1),
+    y = 2 + 3 * x + error
+  )
+
+sim_df_nonconst = sim_df_const %>% 
+  mutate(
+  error = error * .75 * x,
+  y = 2 + 3 * x + error
+)
+```
+
+Let's make a plot to see the distribution
+
+```{r}
+sim_df_const %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_point()
+
+sim_df_nonconst %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_point()
+```
+
+
+```{r}
+sim_df_nonconst %>% 
+  lm(y ~ x, data = .) %>% 
+  broom::tidy()
+```
+
+## using bootstrap for inference
+
+```{r}
+bootstrap_sample = 
+  sim_df_nonconst %>% 
+  sample_frac(size = 1, replace = TRUE) %>% 
+  arrange(x)
+
+lm(y ~ x, data = bootstrap_sample)
+```
+
+Let's write a function
+
+```{r}
+boot_samp = function(df){
+  
+  sample_frac(df, size = 2, replace = TRUE)
+  
+}
+```
+
+Then make a tibble to track everything.
+
+```{r}
+boot_samp_df = 
+  tibble(
+    strap_number = 1:1000,
+    strap_sample = rerun(1000, boot_samp(sim_df_nonconst))
+  )
+```
+
+
+```{r}
+boot_samp_df  %>% 
+  mutate(
+    models = map(.x = strap_sample, ~lm(y ~ x, data = .)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  ggplot(aes(x = estimate)) +
+     geom_histogram() +
+     facet_grid(~term, scales = "free")
+
+
+lm(x ~ y, data = sim_df_nonconst) %>% 
+  broom::tidy()
+
+boot_samp_df  %>% 
+  mutate(
+    models = map(.x = strap_sample, ~lm(y ~ x, data = .)),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>%
+  group_by(term) %>% 
+  summarize(
+    se = sd(estimate)
+  )
+```
+
+
+## use `modelr`
+
+```{r}
+sim_df_nonconst %>% 
+  bootstrap(n = 1000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(y ~ x, data = .x)),
+    results = map(models, broom::tidy)
+  )
+```
+
+## look at airbnb dataset
+
+```{r}
+data("nyc_airbnb")
+
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(stars = review_scores_location / 2) %>% 
+  rename(
+    boro = neighbourhood_group,
+    neighborhood = neighbourhood) %>% 
+  filter(boro != "Staten Island") %>% 
+  select(price, stars, boro, neighborhood, room_type)
+```
+
+Quick look on data
+
+```{r}
+nyc_airbnb %>% 
+  ggplot(aes(x = stars, y = price, color = room_type)) + 
+  geom_point() 
+```
+
+
+
+```{r}
+
+result_bootstrap = 
+  nyc_airbnb %>% 
+  filter(boro == "Manhattan") %>% 
+  bootstrap(n = 100, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~ lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)) %>% 
+  select(results) %>% 
+  unnest(results) %>% 
+  filter(term == "stars")
+  
+result_bootstrap %>%   
+  ggplot(aes(x = estimate)) + geom_density()
+```
+

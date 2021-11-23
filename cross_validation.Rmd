@@ -1,0 +1,86 @@
+---
+title: "Cross Validation"
+author: "Yujin Zhang"
+date: "11/18/2021"
+output: github_document
+---
+
+## Linear regression start
+
+```{r}
+library(tidyverse)
+library(modelr)
+library(mgcv)
+
+set.seed(1)
+```
+
+
+```{r}
+nonlin_df = 
+  tibble(
+    id = 1:100,
+    x = runif(100, 0, 1),
+    y = 1 - 10 * (x - .3) ^ 2 + rnorm(100, 0, .3)
+  )
+
+nonlin_df %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point()
+```
+
+create splits by hand, plot, fit some models
+
+```{r}
+train_df = sample_n(nonlin_df, 80)
+test_df = 
+  anti_join(nonlin_df, train_df, by = "id")
+
+ggplot(train_df, aes(x = x, y = y)) +
+  geom_point( ) +
+  geom_point(data = test_df, color = "red")
+
+
+```
+
+fit the models
+
+```{r}
+linear_mod = lm(y ~ x, data = train_df)
+smooth_mod = mgcv::gam(y ~ s(x), data = train_df)
+wiggly_mod = mgcv::gam(y ~ s(x, k = 30), sp = 10e-6, data = train_df)
+```
+
+plot the results
+```{r}
+train_df %>% 
+  add_predictions(smooth_mod) %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_line(aes(y = pred))
+```
+
+
+quantify the results
+```{r}
+rmse(linear_mod, test_df)
+rmse(smooth_mod, test_df)
+rmse(wiggly_mod, test_df)
+```
+
+
+## CV iteratively
+
+Use `modelr::crossv_mc`
+
+```{r}
+cv_df =
+  crossv_mc(nonlin_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cv_df %>% pull(train) %>% .[[1]] %>% as_tibble()
+```
+
